@@ -219,6 +219,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    if str(args.color_palette) not in COLOR_PALETTES.keys():
+        raise ValueError("Invalid color palette size! Use one of these values: %s." % str(list(COLOR_PALETTES.keys())))
+    
     if LAB:
         print("Preparing error correction.")
         for i in COLOR_PALETTES[str(COLOR_PALETTE_SIZE)]:
