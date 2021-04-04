@@ -109,7 +109,7 @@ def build_frames(input_file: str, width: int, height: int, pixel_size: int, colo
     while cur_frame < needed_frames:
         jobs = []
         for i in range(threads):
-            # we need to check again because the loop might not terminate too late
+            # we need to check again because the loop might terminate too late
             if(cur_frame < needed_frames):
                 p = multiprocessing.Process(target=work, args=(cur_frame,))
                 frames.append(os.path.join("tmp", "%d.png" % cur_frame))
