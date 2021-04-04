@@ -6,7 +6,6 @@ A set of Python scripts that can turn any file into a video file and vice versa.
 
 The set consists out of two Python scripts: ``vb_encode.py`` that encodes any file into a video and ``vb_decode.py``, that can decode a video file back into its original form.
 If you plan on uploading such a video file to a video hosting service, please make sure that the service's compression isn't too harsh on the video since this can quickly make the file unrecoverable. When in doubt, go for a 2 color palette, a pixel size of 2 and 2160p resolution. While this will give you an extremely low efficiency, it makes the file more resilient against compression.
-Keep in mind that decoding, especially when the video has been compressed, can be *very* slow, atleast until I managed to implement multithreaded decoding.
 
 ## Requirements
 
