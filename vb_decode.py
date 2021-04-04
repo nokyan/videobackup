@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import math
+import multiprocessing
 import os
 from os import listdir
 from os.path import isfile, join
@@ -167,13 +168,18 @@ def sha1_file(input_file: str):
         for n in iter(lambda : f.readinto(mv), 0):
             h.update(mv[:n])
     return h.digest()
+
+
+def work(number: int, pixel_size: int, color_palette: int, frame):
+    if(number < len(frames)):
+        return (number, read_frame(frame, pixel_size, color_palette))
     
 
-def rebuild_file(frames: list, checksum: bool, pixel_size: int, color_palette: int):
+def rebuild_file(frames: list, checksum: bool, pixel_size: int, color_palette: int, threads: int):
     # first read the metadata frame
     correct_pixels = 0
     estimated_pixels = 0
-    print("Reading metadata frame at %s." % frames[0])
+    print(f"Reading metadata frame at {frames[0]}; 1/{len(frames)} ({(1/len(frames)):.2f} %).")
     metadata_frame = read_frame(frames[0], pixel_size, color_palette)
     version = int.from_bytes(metadata_frame[0][:2], byteorder="big", signed=False)
     palette_size = int.from_bytes(metadata_frame[0][2:4], byteorder="big", signed=False)
@@ -183,14 +189,24 @@ def rebuild_file(frames: list, checksum: bool, pixel_size: int, color_palette: i
     # strip the file name of any NULLs because python cries when trying to save a file with NULL in its name
     file_name = metadata_frame[0][33:545].decode("utf-8").rstrip("\x00")
     del frames[0]
+    cur_frame = 0
     print("Starting decoding file \"%s\" (Size: %d bytes; Hash: %s; Encoding Version: %d; Palette Size: %d; Pixel Size: %d)." % (file_name, file_size, sha_hash.hex(), version, palette_size, pixel_size))
     with open(file_name, "wb") as f:
-        for (num, frame) in enumerate(frames):
-            print(f"Reading frame {num+1}/{len(frames)} ({round(((num+1)/len(frames))*100, 2)} %).")
-            cur_frame = read_frame(frame, pixel_size, color_palette)
-            correct_pixels += metadata_frame[1][0]
-            estimated_pixels += metadata_frame[1][1]
-            f.write(cur_frame[0])
+        while cur_frame < len(frames):
+            with multiprocessing.Pool(threads) as p:
+                arguments = []
+                for i in range(cur_frame, cur_frame + threads):
+                    if cur_frame < len(frames):
+                        arguments.append((cur_frame, pixel_size, color_palette, frames[cur_frame]))
+                        cur_frame += 1
+                # the threads probably won't finish in order, so we have to sort their results
+                results = sorted(p.starmap(work, arguments), key=lambda x: x[0])
+                for r in results:
+                    correct_pixels += r[1][1][0]
+                    estimated_pixels += r[1][1][1]
+                    f.write(r[1][0])
+            percent = ((cur_frame+1)/(len(frames)+1))*100
+            print(f"Read all frames up to {cur_frame+1}/{len(frames)+1} ({percent:.2f} %).")
         # we probably have written a bunch of 0x00 at the end, truncate them
         print(f"Finished reading frames. Perfectly read pixels: {correct_pixels}, Guessed pixels: {estimated_pixels}, Total pixels: {correct_pixels + estimated_pixels}, Ratio of guessed bytes and total bytes: {estimated_pixels / (correct_pixels + estimated_pixels)}.\nTruncating trailing NULLs.")
         f.seek(file_size)
@@ -212,6 +228,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_checksum", dest="no_checksum", action="store_true", default=False, help="Skips the checksum comparison after decoding.")
     parser.add_argument("--pixel_size", metavar="pixel_size", type=int, help="The size each pixel is in the video.", default=1)
     parser.add_argument("--color_palette", metavar="color_palette", type=int, help="The color palette used in the video.", default=4)
+    parser.add_argument("--threads", metavar="threads", type=int, help="Amount of threads to use for encoding. Defaults to all available cores.", default=len(os.sched_getaffinity(0)))
     
     print("IMPORTANT: THIS TOOL COMES WITH NO WARRANTY WHATSOEVER. USE AT YOUR OWN RISK.")
     
@@ -233,7 +250,7 @@ if __name__ == "__main__":
     	os.mkdir("tmp")
     
     frames = extract_frames(args.input)
-    rebuild_file(frames, not args.no_checksum, args.pixel_size, args.color_palette)
+    rebuild_file(frames, not args.no_checksum, args.pixel_size, args.color_palette, args.threads)
     print("Done! Cleaning up.")
     shutil.rmtree("tmp")
     
