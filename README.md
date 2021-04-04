@@ -20,7 +20,9 @@ Earlier versions of the requirements probably work too but this is what I tested
 ## Todo
 
 - Improve multithreaded encoding
-- Implement multithreaded decoding
+- Improve multithreaded decoding
+- Automatic detection of color palette and pixel size when decoding
+- Instead of buffering the frames in /tmp, access/save them on the fly
 - Better error correction
 - Less spaghetti code (e. g. decoding algorithm)
 - Fix that weird bug where the encoder adds a bunch of unnecessary NULL frames - it doesn't hurt as the decoder truncates it anyways but still
