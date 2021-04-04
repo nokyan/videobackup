@@ -52,15 +52,9 @@ def try_read_pixel(color, color_palette, cps: str):
     except ValueError:
         # TODO: Error correcting
         unsorted = {}
-        if LAB:
-            lab = rgb_to_lab(color)
-            for (num, i) in enumerate(LAB_COLOR_PALETTE):
-                distance = math.sqrt(((lab[0]-i[0]) ** 2) + ((lab[1]-i[1]) ** 2) + ((lab[2]-i[2]) ** 2))
-                unsorted[COLOR_PALETTES[cps][num]] = distance
-        else:
-            for i in COLOR_PALETTES[cps]:
-                distance = math.sqrt(((color[0]-i[0]) ** 2) + ((color[1]-i[1]) ** 2) + ((color[2]-i[2]) ** 2))
-                unsorted[i] = distance
+        for i in COLOR_PALETTES[cps]:
+            distance = math.sqrt(((color[0]-i[0]) ** 2) + ((color[1]-i[1]) ** 2) + ((color[2]-i[2]) ** 2))
+            unsorted[i] = distance
         return [color_palette.index(sorted(unsorted.items(), key=lambda t: t[1])[0][0]), False]
     
     
