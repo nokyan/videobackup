@@ -98,30 +98,30 @@ def build_frames(input_file: str, width: int, height: int, pixel_size: int, colo
     meta_bytes += sha1_file(input_file)
     meta_bytes += os.path.basename(file.name).encode("utf-8")
     frames.append(build_frame(meta_bytes, width, height, 0, pixel_size, color_palette))
-    print(f"Built metadata frame; 1/{needed_frames} ({round((1/needed_frames)*100, 2)} %).")
+    print(f"Built metadata frame; 1/{needed_frames} ({(1/needed_frames):.2f} %).")
     # rather unoptimized multithreading, to be improved
     def work(num: int):
         # seek to the correct position as with multithreading this seems to fail quite a lot
         file.seek((num-1) * int(((width * height) / (pixel_size**2)) / math.log(256, color_palette)))
         new_bytes = file.read(int(((width * height) / (pixel_size**2)) / math.log(256, color_palette)))
         build_frame(new_bytes, width, height, num, pixel_size, color_palette)
-    number = 1
-    while number < needed_frames:
+    cur_frame = 1
+    while cur_frame < needed_frames:
         jobs = []
         for i in range(threads):
             # we need to check again because the loop might not terminate too late
-            if(number < needed_frames):
-                p = multiprocessing.Process(target=work, args=(number,))
-                frames.append(os.path.join("tmp", "%d.png" % number))
-                number += 1
+            if(cur_frame < needed_frames):
+                p = multiprocessing.Process(target=work, args=(cur_frame,))
+                frames.append(os.path.join("tmp", "%d.png" % cur_frame))
+                cur_frame += 1
                 jobs.append(p)
                 p.start()
                 # wait until the process actually started
                 time.sleep(0.05)
         for job in jobs:
             job.join()
-        percent = ((number)/needed_frames)*100
-        print(f"Built all frames to {number}/{needed_frames} ({percent:.2f} %).")
+        percent = ((cur_frame)/needed_frames)*100
+        print(f"Built all frames up to {cur_frame}/{needed_frames} ({percent:.2f} %).")
     file.close()
     return frames
 
