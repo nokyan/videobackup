@@ -1,5 +1,4 @@
 import argparse
-import hashlib
 import math
 import multiprocessing
 import os
@@ -8,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+import vb_common
 
 
 ENC_VERSION_NUM = 1
@@ -63,17 +63,6 @@ def build_frame(data: bytearray, width: int, height: int, count: int, pixel_size
     return os.path.join("tmp", "%d.png" % count)
 
 
-def sha1_file(input_file: str):
-    """Generates the SHA-1 hash of a file"""
-    h  = hashlib.sha1()
-    b  = bytearray(128*1024)
-    mv = memoryview(b)
-    with open(input_file, 'rb', buffering=0) as f:
-        for n in iter(lambda : f.readinto(mv), 0):
-            h.update(mv[:n])
-    return h.digest()
-
-
 def build_frames(input_file: str, width: int, height: int, pixel_size: int, color_palette: int, threads: int):
     """Encodes any file into images."""
     # first frame will always be metadata
@@ -95,7 +84,7 @@ def build_frames(input_file: str, width: int, height: int, pixel_size: int, colo
     meta_bytes += color_palette.to_bytes(2, byteorder="big")
     meta_bytes += pixel_size.to_bytes(1, byteorder="big")
     meta_bytes += os.path.getsize(input_file).to_bytes(8, byteorder="big")
-    meta_bytes += sha1_file(input_file)
+    meta_bytes += vb_common.sha1_file(input_file)
     meta_bytes += os.path.basename(file.name).encode("utf-8")
     frames.append(build_frame(meta_bytes, width, height, 0, pixel_size, color_palette))
     print(f"Built metadata frame; 1/{needed_frames} ({(1/needed_frames):.2f} %).")

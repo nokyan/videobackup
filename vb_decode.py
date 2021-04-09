@@ -1,5 +1,4 @@
 import argparse
-import hashlib
 import math
 import multiprocessing
 import os
@@ -10,6 +9,8 @@ import shutil
 import subprocess
 import time
 import threading
+import vb_common
+
 
 # still not the prettiest implementation but hey, it works
 COLOR_PALETTES = {
@@ -30,11 +31,6 @@ def get_frames(input_file: str, start: int, amount: int):
         output_list.append((os.path.join("tmp", f"{i:04}.bmp")))
     return output_list
 
-
-def clamp(val, min, max):
-    if val < min: return min
-    if val > max: return max
-    return val
 
 class Frames():
     """Offers an easy interface for working with temporary frames of a video"""
@@ -103,16 +99,6 @@ def read_frame(input_file: str, pixel_size: int, cp: int):
     return (read_bytes, (correct_pixels, estimated_pixels))
 
 
-def sha1_file(input_file: str):
-    h  = hashlib.sha1()
-    b  = bytearray(128*1024)
-    mv = memoryview(b)
-    with open(input_file, 'rb', buffering=0) as f:
-        for n in iter(lambda : f.readinto(mv), 0):
-            h.update(mv[:n])
-    return h.digest()
-
-
 def work(number: int, pixel_size: int, color_palette: int, frame: str):
     return (number, read_frame(frame, pixel_size, color_palette))
     
@@ -146,7 +132,7 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
     with open(file_name, "wb") as file:
         while cur_frame < frames_amount:
             with multiprocessing.Pool(threads) as p:
-                read_amount = clamp(frames_amount - cur_frame, 0, threads)
+                read_amount = vb_common.clamp(frames_amount - cur_frame, 0, threads)
                 with Frames(input_file, cur_frame, read_amount) as frames_list:
                     arguments = []
                     for f in frames_list:
@@ -167,7 +153,7 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
         file.truncate()
     if checksum:
         print("Comparing checksums.")
-        if sha1_file(file_name) == sha_hash:
+        if vb_common.sha1_file(file_name) == sha_hash:
             print("Checksum comparison successful!")
         else:
             print("Checksum comparison failed! It's very likely that the video file has been corrupted beyond repair in some way (likely due to compression).")
