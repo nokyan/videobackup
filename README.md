@@ -12,9 +12,10 @@ If you plan on uploading such a video file to a video hosting service, please ma
 - Python >= 3.8.6
 - pillow >= 7.2.0
 - ffmpeg
-- Beefy hardware
+- Beefy hardware*
   
 Earlier versions of the requirements probably work too but this is what I tested it with.
+\*Especially CPU horsepower and RAM is important. This tool can make use of all of your threads, but keep in mind that every thread needs a lot of RAM (e. g. ~700 MiB *per thread* when decoding a 2160p video). Also be aware that depending on the encoding options, the result video can be 5 to 9 times as large as the original file.
 
 ## Todo
 
