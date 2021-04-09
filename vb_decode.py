@@ -20,32 +20,37 @@ COLOR_PALETTES = {
 }
 
 
-def extract_frames(input_file: str):
-    print("Using ffmpeg to extract every frame of the video.")
-    subprocess.run(["ffmpeg", "-i", input_file, os.path.join("tmp", "%10d.png")],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT)
-    print("Done.")
-    return sorted([os.path.join("tmp", f) for f in listdir("tmp") if isfile(join("tmp", f))])
+def get_frames(input_file: str, start: int, amount: int):
+    """Uses ffmpeg magic to get the nth frame of a video"""
+    subprocess.run(["ffmpeg", "-i", input_file, "-vf", ("select=gte(n\,%i)" % start), "-vframes", str(amount), "-start_number", str(start), (os.path.join("tmp", "%04d.bmp"))],
+                   stdout=subprocess.PIPE,
+                   stderr=subprocess.STDOUT)
+    output_list = []
+    for i in range(start, start + amount):
+        output_list.append((os.path.join("tmp", f"{i:04}.bmp")))
+    return output_list
 
 
-def remove_duplicate_frames(frames: list):
-    """Supposed to remove duplicate frames inside the tmp folder. Unused because it doesn't really work"""
-    print("Removing duplicate frames")
-    print(frames)
-    found_digests = []
-    new_frames = frames
-    for f in frames:
-        digest = sha1_file(f)
-        print(digest)
-        if digest in found_digests:
-            frames.remove(f)
-            os.remove(f)
-        else:
-            found_digests.append(digest)
-    return new_frames
+def clamp(val, min, max):
+    if val < min: return min
+    if val > max: return max
+    return val
+
+class Frames():
+    """Offers an easy interface for working with temporary frames of a video"""
+    def __init__(self, input_file: str, start: int, amount: int):
+        self.input_file = input_file
+        self.start = start
+        self.amount = amount
     
+    def __enter__(self):
+        return get_frames(self.input_file, self.start, self.amount)
     
+    def __exit__(self, type, value, trace):
+        for i in range(self.start, self.start + self.amount):
+            os.remove((os.path.join("tmp", f"{i:04}.bmp")))
+
+
 def try_read_pixel(color, color_palette, cps: str):
     try:
         return [color_palette.index(color), True]
@@ -56,8 +61,8 @@ def try_read_pixel(color, color_palette, cps: str):
             distance = math.sqrt(((color[0]-i[0]) ** 2) + ((color[1]-i[1]) ** 2) + ((color[2]-i[2]) ** 2))
             unsorted[i] = distance
         return [color_palette.index(sorted(unsorted.items(), key=lambda t: t[1])[0][0]), False]
-    
-    
+
+
 def read_frame(input_file: str, pixel_size: int, cp: int):
     image = Image.open(input_file)
     size = image.size
@@ -108,47 +113,58 @@ def sha1_file(input_file: str):
     return h.digest()
 
 
-def work(number: int, pixel_size: int, color_palette: int, frame):
-    if(number < len(frames)):
-        return (number, read_frame(frame, pixel_size, color_palette))
+def work(number: int, pixel_size: int, color_palette: int, frame: str):
+    return (number, read_frame(frame, pixel_size, color_palette))
     
 
-def rebuild_file(frames: list, checksum: bool, pixel_size: int, color_palette: int, threads: int):
+def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette: int, threads: int):
     # first read the metadata frame
     correct_pixels = 0
     estimated_pixels = 0
-    print(f"Reading metadata frame at {frames[0]}; 1/{len(frames)} ({(1/len(frames)):.2f} %).")
-    metadata_frame = read_frame(frames[0], pixel_size, color_palette)
-    version = int.from_bytes(metadata_frame[0][:2], byteorder="big", signed=False)
-    palette_size = int.from_bytes(metadata_frame[0][2:4], byteorder="big", signed=False)
-    pixel_size = int.from_bytes(metadata_frame[0][4:5], byteorder="big", signed=False)
-    file_size = int.from_bytes(metadata_frame[0][5:13], byteorder="big", signed=False)
-    sha_hash = metadata_frame[0][13:33]
-    # strip the file name of any NULLs because python cries when trying to save a file with NULL in its name
-    file_name = metadata_frame[0][33:545].decode("utf-8").rstrip("\x00")
-    del frames[0]
-    cur_frame = 0
+    # get the number of frames in the video
+    try:
+        frames_amount = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=nb_frames", "-of", "default=nokey=1:noprint_wrappers=1", input_file],
+                                           capture_output=True).stdout)
+    # flv, mkv and some others don't support the ffprobe method
+    except ValueError:
+        print("Unable to get number of frames using fast method, resorting to slower method.")
+        frames_amount = int(subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "default=nokey=1:noprint_wrappers=1", input_file],
+                                           capture_output=True).stdout)
+    with Frames(input_file, 0, 1) as metadata_file:
+        print(f"Reading metadata frame at {metadata_file[0]}; 1/{frames_amount} ({(1/frames_amount):.2f} %).")
+        metadata_frame = read_frame(metadata_file[0], pixel_size, color_palette)
+        version = int.from_bytes(metadata_frame[0][:2], byteorder="big", signed=False)
+        palette_size = int.from_bytes(metadata_frame[0][2:4], byteorder="big", signed=False)
+        pixel_size = int.from_bytes(metadata_frame[0][4:5], byteorder="big", signed=False)
+        file_size = int.from_bytes(metadata_frame[0][5:13], byteorder="big", signed=False)
+        sha_hash = metadata_frame[0][13:33]
+        # strip the file name of any NULLs because python cries when trying to save a file with NULL in its name
+        file_name = metadata_frame[0][33:545].decode("utf-8").rstrip("\x00")
+    cur_frame = 1
     print("Starting decoding file \"%s\" (Size: %d bytes; Hash: %s; Encoding Version: %d; Palette Size: %d; Pixel Size: %d)." % (file_name, file_size, sha_hash.hex(), version, palette_size, pixel_size))
-    with open(file_name, "wb") as f:
-        while cur_frame < len(frames):
+    # yes, the level of indentations is horrendous, no, I'm not proud of it, but it works
+    with open(file_name, "wb") as file:
+        while cur_frame < frames_amount:
             with multiprocessing.Pool(threads) as p:
-                arguments = []
-                for i in range(cur_frame, cur_frame + threads):
-                    if cur_frame < len(frames):
-                        arguments.append((cur_frame, pixel_size, color_palette, frames[cur_frame]))
-                        cur_frame += 1
-                # the threads probably won't finish in order, so we have to sort their results
-                results = sorted(p.starmap(work, arguments), key=lambda x: x[0])
-                for r in results:
-                    correct_pixels += r[1][1][0]
-                    estimated_pixels += r[1][1][1]
-                    f.write(r[1][0])
-            percent = ((cur_frame+1)/(len(frames)+1))*100
-            print(f"Read all frames up to {cur_frame+1}/{len(frames)+1} ({percent:.2f} %).")
+                read_amount = clamp(frames_amount - cur_frame, 0, threads)
+                with Frames(input_file, cur_frame, read_amount) as frames_list:
+                    arguments = []
+                    for f in frames_list:
+                        if cur_frame < frames_amount:
+                            arguments.append((cur_frame, pixel_size, color_palette, f))
+                            cur_frame += 1
+                    # the threads probably won't finish in order, so we have to sort their results
+                    results = sorted(p.starmap(work, arguments), key=lambda x: x[0])
+                    for r in results:
+                        correct_pixels += r[1][1][0]
+                        estimated_pixels += r[1][1][1]
+                        file.write(r[1][0])
+            percent = ((cur_frame+1)/(frames_amount+1))*100
+            print(f"Read all frames up to {cur_frame+1}/{frames_amount+1} ({percent:.2f} %).")
         # we probably have written a bunch of 0x00 at the end, truncate them
         print(f"Finished reading frames. Perfectly read pixels: {correct_pixels}, Guessed pixels: {estimated_pixels}, Total pixels: {correct_pixels + estimated_pixels}, Ratio of guessed bytes and total bytes: {estimated_pixels / (correct_pixels + estimated_pixels)}.\nTruncating trailing NULLs.")
-        f.seek(file_size)
-        f.truncate()
+        file.seek(file_size)
+        file.truncate()
     if checksum:
         print("Comparing checksums.")
         if sha1_file(file_name) == sha_hash:
@@ -182,8 +198,7 @@ if __name__ == "__main__":
     if not os.path.exists("tmp"):
     	os.mkdir("tmp")
     
-    frames = extract_frames(args.input)
-    rebuild_file(frames, not args.no_checksum, args.pixel_size, args.color_palette, args.threads)
+    rebuild_file(args.input, not args.no_checksum, args.pixel_size, args.color_palette, args.threads)
     print("Done! Cleaning up.")
     shutil.rmtree("tmp")
     
