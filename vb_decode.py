@@ -54,7 +54,7 @@ def try_read_pixel(color, color_palette, cps: str):
         # TODO: Error correcting
         unsorted = {}
         for i in COLOR_PALETTES[cps]:
-            distance = math.sqrt(((color[0]-i[0]) ** 2) + ((color[1]-i[1]) ** 2) + ((color[2]-i[2]) ** 2))
+            distance = ((color[0]-i[0]) ** 2) + ((color[1]-i[1]) ** 2) + ((color[2]-i[2]) ** 2)
             unsorted[i] = distance
         return [color_palette.index(sorted(unsorted.items(), key=lambda t: t[1])[0][0]), False]
 
