@@ -5,13 +5,17 @@ import os
 from os import listdir
 from os.path import isfile, join
 from PIL import Image
+from reedsolo import RSCodec, ReedSolomonError
 import shutil
 import subprocess
+import sys
 import time
 import threading
 import vb_common
 
 
+ENC_VERSION_NUM = 2
+BLOCK_SIZE = 128
 # still not the prettiest implementation but hey, it works
 COLOR_PALETTES = {
     "256": [(0, 0, 0), (0, 0, 85), (36, 0, 85), (0, 182, 85), (73, 0, 85), (109, 0, 85), (73, 182, 170), (182, 182, 255), (255, 255, 0), (0, 0, 170), (182, 0, 85), (146, 182, 170), (219, 0, 85), (109, 109, 0), (182, 146, 255), (255, 0, 85), (0, 73, 255), (109, 219, 170), (36, 0, 0), (182, 73, 170), (0, 255, 170), (73, 73, 170), (219, 109, 170), (36, 109, 255), (255, 109, 85), (0, 146, 255), (182, 219, 170), (109, 255, 85), (182, 73, 85), (219, 219, 85), (255, 219, 170), (0, 36, 255), (146, 219, 255), (255, 109, 0), (0, 146, 170), (219, 255, 0), (255, 255, 85), (0, 0, 255), (36, 36, 85), (182, 0, 255), (219, 219, 255), (73, 0, 0), (73, 146, 0), (109, 146, 0), (73, 36, 170), (146, 146, 0), (182, 36, 85), (73, 146, 85), (146, 219, 170), (36, 219, 170), (255, 0, 170), (219, 36, 170), (255, 182, 85), (182, 219, 85), (0, 255, 255), (73, 109, 0), (182, 109, 255), (36, 255, 170), (109, 0, 0), (255, 219, 85), (0, 36, 170), (73, 255, 170), (146, 255, 0), (109, 109, 255), (109, 255, 170), (109, 146, 170), (182, 255, 0), (255, 219, 0), (0, 36, 85), (219, 255, 85), (255, 109, 170), (73, 0, 255), (73, 146, 170), (109, 146, 85), (255, 146, 85), (0, 109, 85), (146, 0, 0), (146, 36, 0), (182, 36, 0), (146, 146, 255), (219, 0, 170), (255, 36, 0), (0, 73, 170), (146, 36, 85), (0, 219, 170), (73, 73, 255), (109, 73, 170), (255, 73, 255), (0, 182, 0), (146, 109, 85), (255, 255, 170), (182, 0, 0), (73, 182, 85), (219, 109, 85), (182, 219, 255), (36, 182, 85), (146, 182, 85), (73, 36, 85), (255, 109, 255), (73, 182, 0), (36, 146, 170), (146, 0, 255), (0, 255, 0), (146, 182, 0), (146, 36, 170), (182, 0, 170), (219, 36, 85), (73, 255, 0), (219, 0, 0), (219, 182, 0), (36, 255, 255), (255, 182, 0), (0, 73, 85), (73, 255, 255), (255, 146, 170), (0, 109, 255), (109, 255, 255), (73, 73, 85), (219, 182, 85), (182, 255, 85), (146, 73, 85), (219, 255, 170), (182, 219, 0), (146, 109, 255), (73, 36, 0), (146, 219, 0), (219, 73, 85), (73, 146, 255), (255, 0, 0), (0, 73, 0), (146, 0, 170), (109, 219, 255), (36, 146, 0), (182, 182, 85), (0, 182, 170), (255, 219, 255), (109, 36, 85), (36, 36, 255), (36, 146, 255), (146, 146, 170), (73, 182, 255), (146, 0, 85), (20, 219, 85), (219, 146, 170), (73, 109, 85), (219, 36, 0), (182, 36, 255), (219, 182, 170), (255, 146, 0), (0, 109, 0), (146, 73, 255), (36, 73, 0), (36, 73, 85), (146, 182, 255), (109, 73, 85), (73, 255, 85), (36, 219, 255), (146, 109, 0), (36, 73, 170), (146, 255, 255), (219, 73, 170), (255, 73, 85), (0, 146, 85), (146, 146, 85), (36, 0, 255), (146, 36, 255), (0, 182, 255), (73, 73, 0), (219, 146, 85), (109, 0, 170), (255, 36, 170), (73, 36, 255), (182, 146, 0), (109, 182, 85), (73, 219, 85), (219, 146, 0), (0, 109, 170), (36, 109, 0), (219, 36, 255), (109, 182, 170), (255, 182, 170), (36, 73, 255), (73, 219, 0), (219, 219, 0), (146, 219, 85), (109, 73, 0), (73, 109, 255), (109, 109, 170), (219, 219, 170), (255, 182, 255), (219, 109, 0), (109, 219, 0), (0, 36, 0), (36, 36, 0), (255, 255, 255), (73, 0, 170), (219, 0, 255), (36, 182, 170), (109, 36, 0), (219, 182, 255), (146, 73, 0), (109, 36, 170), (109, 182, 255), (182, 182, 0), (255, 0, 255), (0, 255, 85), (182, 182, 170), (36, 255, 85), (146, 109, 170), (109, 36, 255), (255, 36, 255), (0, 219, 255), (109, 255, 0), (219, 73, 255), (109, 73, 255), (146, 255, 170), (73, 219, 170), (109, 219, 85), (146, 73, 170), (36, 36, 170), (182, 73, 0), (182, 109, 0), (36, 219, 0), (255, 73, 170), (0, 146, 0), (182, 255, 255), (36, 0, 170), (219, 255, 255), (182, 109, 85), (36, 146, 85), (109, 0, 255), (182, 255, 170), (109, 146, 255), (36, 255, 0), (182, 36, 170), (219, 73, 0), (182, 146, 85), (255, 36, 85), (0, 219, 0), (146, 255, 85), (219, 146, 255), (73, 109, 170), (109, 109, 85), (36, 109, 85), (36, 219, 85), (182, 146, 170), (73, 219, 255), (182, 73, 255), (36, 182, 0), (255, 146, 255), (219, 109, 255), (182, 109, 170), (36, 109, 170), (109, 182, 0), (36, 182, 255), (255, 73, 0)],
@@ -96,11 +100,24 @@ def read_frame(input_file: str, pixel_size: int, cp: int):
             correct_pixels += 1
         else:
             estimated_pixels += 1
-    return (read_bytes, (correct_pixels, estimated_pixels))
+    return (read_bytes, (correct_pixels, estimated_pixels), scaled_size)
 
 
-def work(number: int, pixel_size: int, color_palette: int, frame: str):
-    return (number, read_frame(frame, pixel_size, color_palette))
+def work(number: int, pixel_size: int, palette_size: int, frame: str, ecc_bytes_count: int):
+    final_bytes = bytearray()
+    ecc = RSCodec(ecc_bytes_count)
+    read_bytes = read_frame(frame, pixel_size, palette_size)
+    blocks_per_frame = math.floor((read_bytes[2][0] * read_bytes[2][1]) / (pixel_size ** 2) / int(math.log(256, palette_size)) / BLOCK_SIZE)
+    content_bytes_per_block = BLOCK_SIZE - ecc_bytes_count
+    content_bytes_per_frame = blocks_per_frame * content_bytes_per_block
+    for i in range(0, blocks_per_frame):
+        sli = read_bytes[0][(i * BLOCK_SIZE):((i + 1) * BLOCK_SIZE)]
+        try:
+            final_bytes += ecc.decode(sli)[0]
+        except ReedSolomonError:
+            final_bytes += sli[:(BLOCK_SIZE - ecc_bytes_count)]
+            print(f"WARNING: Encountered an unrecoverable data block starting at 0x{(i * BLOCK_SIZE):x}. The block will be inserted without any error-correcting, your file will most likely be damaged.")
+    return (number, (final_bytes, read_bytes[1]))
     
 
 def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette: int, threads: int):
@@ -118,14 +135,25 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
                                            capture_output=True).stdout)
     with Frames(input_file, 0, 1) as metadata_file:
         print(f"Reading metadata frame at {metadata_file[0]}; 1/{frames_amount} ({(1/frames_amount):.2f} %).")
+        meta_ecc = RSCodec(32)
         metadata_frame = read_frame(metadata_file[0], pixel_size, color_palette)
-        version = int.from_bytes(metadata_frame[0][:2], byteorder="big", signed=False)
-        palette_size = int.from_bytes(metadata_frame[0][2:4], byteorder="big", signed=False)
-        pixel_size = int.from_bytes(metadata_frame[0][4:5], byteorder="big", signed=False)
-        file_size = int.from_bytes(metadata_frame[0][5:13], byteorder="big", signed=False)
-        sha_hash = metadata_frame[0][13:33]
+        correct_pixels += metadata_frame[1][0]
+        estimated_pixels += metadata_frame[1][1]
+        try:
+            metadata_bytes = meta_ecc.decode(metadata_frame[0][:546])[0]
+        except ReedSolomonError:
+            print("Metadata frame is unrecoverable, sorry. This is a sign of either too heavy compression or wrong command line arguments. Aborting.")
+            sys.exit(1)
+        version = int.from_bytes(metadata_bytes[:2], byteorder="big", signed=False)
+        palette_size = int.from_bytes(metadata_bytes[2:4], byteorder="big", signed=False)
+        pixel_size = int.from_bytes(metadata_bytes[4:5], byteorder="big", signed=False)
+        file_size = int.from_bytes(metadata_bytes[5:13], byteorder="big", signed=False)
+        sha_hash = metadata_bytes[13:33]
+        ecc_bytes_count = int.from_bytes(metadata_bytes[33:34], byteorder="big", signed=False)
         # strip the file name of any NULLs because python cries when trying to save a file with NULL in its name
-        file_name = metadata_frame[0][33:545].decode("utf-8").rstrip("\x00")
+        file_name = metadata_bytes[34:546].decode("utf-8").rstrip("\x00")
+    if version != ENC_VERSION_NUM:
+        print("WARNING: The encoding version of the file doesn't match with the version of this decoder!")
     cur_frame = 1
     print("Starting decoding file \"%s\" (Size: %d bytes; Hash: %s; Encoding Version: %d; Palette Size: %d; Pixel Size: %d)." % (file_name, file_size, sha_hash.hex(), version, palette_size, pixel_size))
     # yes, the level of indentations is horrendous, no, I'm not proud of it, but it works
@@ -137,7 +165,7 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
                     arguments = []
                     for f in frames_list:
                         if cur_frame < frames_amount:
-                            arguments.append((cur_frame, pixel_size, color_palette, f))
+                            arguments.append((cur_frame, pixel_size, color_palette, f, ecc_bytes_count))
                             cur_frame += 1
                     # the threads probably won't finish in order, so we have to sort their results
                     results = sorted(p.starmap(work, arguments), key=lambda x: x[0])
