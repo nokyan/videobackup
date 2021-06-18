@@ -2,7 +2,7 @@ import argparse
 import math
 import multiprocessing
 import os
-from os import listdir
+from os import error, listdir
 from os.path import isfile, join
 from PIL import Image
 from reedsolo import RSCodec, ReedSolomonError
@@ -74,6 +74,7 @@ def read_frame(input_file: str, pixel_size: int, cp: int):
     correct_pixels = 0
     estimated_pixels = 0
     cur_byte = 0x0
+    
     for (num, p) in enumerate(pixels):
         read_color = p
         read_pixel = try_read_pixel(read_color, color_palette, str(cp))
@@ -107,23 +108,28 @@ def work(number: int, pixel_size: int, palette_size: int, frame: str, ecc_bytes_
     final_bytes = bytearray()
     ecc = RSCodec(ecc_bytes_count)
     read_bytes = read_frame(frame, pixel_size, palette_size)
+    error_num = 0
     blocks_per_frame = math.floor((read_bytes[2][0] * read_bytes[2][1]) / (pixel_size ** 2) / int(math.log(256, palette_size)) / BLOCK_SIZE)
-    content_bytes_per_block = BLOCK_SIZE - ecc_bytes_count
-    content_bytes_per_frame = blocks_per_frame * content_bytes_per_block
+    
     for i in range(0, blocks_per_frame):
         sli = read_bytes[0][(i * BLOCK_SIZE):((i + 1) * BLOCK_SIZE)]
         try:
-            final_bytes += ecc.decode(sli)[0]
+            dec = ecc.decode(sli)
+            final_bytes += dec[0]
+            error_num += len(dec[2])
         except ReedSolomonError:
             final_bytes += sli[:(BLOCK_SIZE - ecc_bytes_count)]
+            error_num += ecc.maxerrata(verbose=True)[0]
             print(f"WARNING: Encountered an unrecoverable data block starting at 0x{(i * BLOCK_SIZE):x}. The block will be inserted without any error-correcting, your file will most likely be damaged.")
-    return (number, (final_bytes, read_bytes[1]))
+    return (number, (final_bytes, read_bytes[1]), error_num)
     
 
 def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette: int, threads: int):
     # first read the metadata frame
     correct_pixels = 0
     estimated_pixels = 0
+    ecc_bytes = 0
+    
     # get the number of frames in the video
     try:
         frames_amount = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=nb_frames", "-of", "default=nokey=1:noprint_wrappers=1", input_file],
@@ -133,6 +139,7 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
         print("Unable to get number of frames using fast method, resorting to slower method.")
         frames_amount = int(subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "default=nokey=1:noprint_wrappers=1", input_file],
                                            capture_output=True).stdout)
+    
     with Frames(input_file, 0, 1) as metadata_file:
         print(f"Reading metadata frame at {metadata_file[0]}; 1/{frames_amount} ({(1/frames_amount):.2f} %).")
         meta_ecc = RSCodec(32)
@@ -154,6 +161,7 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
         file_name = metadata_bytes[34:546].decode("utf-8").rstrip("\x00")
     if version != ENC_VERSION_NUM:
         print("WARNING: The encoding version of the file doesn't match with the version of this decoder!")
+    
     cur_frame = 1
     print("Starting decoding file \"%s\" (Size: %d bytes; Hash: %s; Encoding Version: %d; Palette Size: %d; Pixel Size: %d)." % (file_name, file_size, sha_hash.hex(), version, palette_size, pixel_size))
     # yes, the level of indentations is horrendous, no, I'm not proud of it, but it works
@@ -172,13 +180,18 @@ def rebuild_file(input_file: str, checksum: bool, pixel_size: int, color_palette
                     for r in results:
                         correct_pixels += r[1][1][0]
                         estimated_pixels += r[1][1][1]
+                        ecc_bytes += r[2]
                         file.write(r[1][0])
             percent = ((cur_frame+1)/(frames_amount+1))*100
             print(f"Read all frames up to {cur_frame+1}/{frames_amount+1} ({percent:.2f} %).")
         # we probably have written a bunch of 0x00 at the end, truncate them
-        print(f"Finished reading frames. Perfectly read pixels: {correct_pixels}, Guessed pixels: {estimated_pixels}, Total pixels: {correct_pixels + estimated_pixels}, Ratio of guessed bytes and total bytes: {estimated_pixels / (correct_pixels + estimated_pixels)}.\nTruncating trailing NULLs.")
+        print("Finished reading frames.")
+        print(f"Total pixels: {correct_pixels + estimated_pixels} • Perfectly read pixels: {correct_pixels} • Guessed pixels: {estimated_pixels} • Ratio: {estimated_pixels / (correct_pixels + estimated_pixels)}")
+        print(f"Total bytes: {file_size} • Perfectly read bytes: {file_size-ecc_bytes} • ECC'ed bytes: {ecc_bytes} • Ratio: {ecc_bytes / file_size}")
+        print("Truncating NULLs.")
         file.seek(file_size)
         file.truncate()
+    
     if checksum:
         print("Comparing checksums.")
         if vb_common.sha1_file(file_name) == sha_hash:
