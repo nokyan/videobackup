@@ -20,6 +20,7 @@ If you plan on uploading such a video file to a video hosting service, please ma
 - Python >= 3.8.6
 - pillow >= 7.2.0
 - reedsolo >= 1.5.4
+- natsort >= 7.1.1
 - ffmpeg
 - Beefy hardware*
   
@@ -30,7 +31,6 @@ Earlier versions of the requirements probably work too but this is what I tested
 ## Todo (somewhat ordered from high to low priority)
 
 - Write and read BMPs ourselves to speed up decoding (and hopefully encoding too)
-- When encoding, append generated frames to a video directly without buffering on disk
 - Improve multithreaded encoding
 - Improve multithreaded decoding
 - Automatic detection of color palette and pixel size when decoding
